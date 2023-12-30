@@ -25,7 +25,9 @@ public class Main {
 
         SparkSession spark = SparkSession.builder().appName("incr-read-example").getOrCreate();
 
-        String destinationTableName = "orders.payments";
+        String sourceTableName = "orders.payments";
+        String destinationTableName = "orders.payments_merge";
+
         Table destinationTable = null;
         try {
             destinationTable = Spark3Util.loadIcebergTable(spark, destinationTableName);
@@ -35,25 +37,30 @@ public class Main {
             throw new RuntimeException(e);
         }
 
-        TableScan scan = destinationTable.newScan();
 
-        TableScan filteredScan = scan.filter(Expressions.equal("id", 5));
+        // long endSnapshotId = sourceTable.currentSnapshot().snapshotId();
+        long endSnapshotId = 6234076645174348707L;
 
+        Dataset<Row> inputDF = spark.sql("select * from iceberg.orders.payments VERSION AS OF " + endSnapshotId);
 
-        /*
-        List<Map.Entry<String, String>> sourceWatermarkProperties =
-        destinationTable.properties().entrySet().stream()
-            .filter(entry -> entry.getKey().startsWith(WATERMARK_PROP_PREFIX))
-            .toList();
+                /*
+                spark
+                        .read()
+                        .format("iceberg")
+                        .option("start-snapshot-id", startSnapshotId)
+                        .option("end-snapshot-id", endSnapshotId)
+                        .table(sourceTableName);
 
-         # Some snapshots of dest may not have WATERMARK_PROP_PREFIX
-         # Can check value of `operation` for that https://iceberg.apache.org/spec/#snapshots
-         */
+                 */
 
-        System.out.printf("Hello and welcome!");
-
-        for (int i = 1; i <= 5; i++) {
-            System.out.println("i = " + i);
+        try {
+            inputDF.writeTo(destinationTableName)
+                    .option(format("snapshot-property.%s.%s", WATERMARK_PROP_PREFIX, sourceTableName), String.valueOf(endSnapshotId))
+                    .append();
+        } catch (NoSuchTableException e) {
+            throw new RuntimeException(e);
         }
+
+
     }
 }
