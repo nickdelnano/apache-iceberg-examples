@@ -106,8 +106,8 @@ public class TestIcebergJavaAPIExamples {
                 ,SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)
         ).count();
 
-        // Seed data into business_cdc table
         /*
+        // Seed data into business_cdc table
         spark.sql(String.format("INSERT INTO %s.%s (\n" +
                         "VALUES\n" +
                         "(0, 'business_0', '0 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE), \n" +
@@ -121,7 +121,9 @@ public class TestIcebergJavaAPIExamples {
 
     @AfterAll
     public static void tearDown() throws Exception {
-        spark.stop();
+        if(spark != null) {
+            spark.stop();
+        }
     }
 
     @Test
