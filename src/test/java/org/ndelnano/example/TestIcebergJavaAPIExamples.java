@@ -30,11 +30,9 @@ public class TestIcebergJavaAPIExamples {
 
     static RESTCatalog catalog;
     static Configuration conf;
-    static Map<String, String> properties;
-    static String CATALOG_NAME = "iceberg";
-
     static SparkSession spark;
-
+    static String CATALOG_NAME = "iceberg";
+    static String SCHEMA_NAME = "demo";
     static String BUSINESS_CDC_SOURCE_TABLE_NAME = "business_cdc";
     static String BUSINESS_DEST_TABLE_NAME = "business";
 
@@ -48,7 +46,6 @@ public class TestIcebergJavaAPIExamples {
         catalog.initialize(CATALOG_NAME, properties);
 
         // Create tables
-        // Iceberg Spark config is set by spark-iceberg container in docker-compose
         SparkConf sparkConf = new SparkConf().setAppName("incremental-read-tests").setMaster("local[2]");
         sparkConf.set("spark.master", "spark://localhost:7077");
         sparkConf.set("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions");
@@ -57,47 +54,74 @@ public class TestIcebergJavaAPIExamples {
         sparkConf.set("spark.sql.catalog.iceberg.uri", "http://localhost:8181");
         sparkConf.set("spark.sql.catalog.iceberg.io-impl", "org.apache.iceberg.aws.s3.S3FileIO");
         sparkConf.set("spark.sql.catalog.iceberg.warehouse", "s3://warehouse/wh/");
-        sparkConf.set("spark.sql.catalog.iceberg.s3.endpoint", "http://localhost:9000");
+        sparkConf.set("spark.sql.catalog.iceberg.s3.endpoint", "http://minio:9000");
         sparkConf.set("spark.sql.defaultCatalog", "iceberg");
 
         // Create a Spark session
         spark = SparkSession.builder()
                 .config(sparkConf)
                 .getOrCreate();
-        spark.sql(
-        "CREATE TABLE demo.business_cdc (\n" +
+
+        // Drop tables if exists
+        spark.sql(String.format(
+                "DROP TABLE IF EXISTS %s.%s"
+                ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)
+        ).count();
+
+        spark.sql(String.format(
+                "DROP TABLE IF EXISTS %s.%s"
+                ,SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)
+        ).count();
+
+        // Create tables
+        spark.sql(String.format(
+        "CREATE TABLE %s.%s (\n" +
                 "id STRING,\n" +
                 "name STRING,\n" +
                 "address STRING,\n" +
                 "cdc_operation STRING,\n" +
                 "event_time TIMESTAMP)\n" +
                 "USING iceberg\n" +
-                "PARTITIONED BY (event_time)\n" +
+                "PARTITIONED BY (hour(event_time))\n" +
                 "LOCATION 's3://warehouse/demo/business_cdc'\n" +
                 "TBLPROPERTIES (\n" +
                 "'format' = 'iceberg/parquet',\n" +
                 "'format-version' = '2',\n" +
                 "'write.parquet.compression-codec' = 'zstd')"
-        );
+            ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)
+        ).count();
         spark.sql(
-                "CREATE TABLE demo.business (\n" +
+                String.format("CREATE TABLE %s.%s (\n" +
                         "id STRING,\n" +
                         "name STRING,\n" +
                         "address STRING,\n" +
                         "event_time TIMESTAMP)\n" +
                         "USING iceberg\n" +
-                        "PARTITIONED BY (event_time)\n" +
+                        "PARTITIONED BY (id)\n" +
                         "LOCATION 's3://warehouse/demo/business'\n" +
                         "TBLPROPERTIES (\n" +
                         "'format' = 'iceberg/parquet',\n" +
                         "'format-version' = '2',\n" +
                         "'write.parquet.compression-codec' = 'zstd')"
-        );
+                ,SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)
+        ).count();
+
+        // Seed data into business_cdc table
+        /*
+        spark.sql(String.format("INSERT INTO %s.%s (\n" +
+                        "VALUES\n" +
+                        "(0, 'business_0', '0 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE), \n" +
+                        "(1, 'business_1', '1 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE) \n" +
+                        ")"
+        ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME));
+
+         */
+
     }
 
     @AfterAll
     public static void tearDown() throws Exception {
-        // spark.stop();
+        spark.stop();
     }
 
     @Test
@@ -118,18 +142,21 @@ public class TestIcebergJavaAPIExamples {
         merge table has correct data for each merge
         merging sequentially returns correct data, merging all snapshots at once returns correct data
          */
-        Namespace orders = Namespace.of("orders");
-        TableIdentifier paymentsTableIdentifier = TableIdentifier.of(orders, "payments");
-        Table payments = catalog.loadTable(paymentsTableIdentifier);
+        Namespace demo = Namespace.of(SCHEMA_NAME);
 
-        TableIdentifier paymentsMergeTableIdentifier = TableIdentifier.of(orders, "payments_merge");
-        Table payments_merge = catalog.loadTable(paymentsMergeTableIdentifier);
+        TableIdentifier businessCdcIdentifier = TableIdentifier.of(demo, BUSINESS_CDC_SOURCE_TABLE_NAME);
+        Table businessCdcTable = catalog.loadTable(businessCdcIdentifier);
 
-        Snapshot paymentsSnapshot = payments.currentSnapshot();
-        Snapshot paymentsMergeSnapshot = payments_merge.currentSnapshot();
+        TableIdentifier businessIdentifier = TableIdentifier.of(demo, BUSINESS_DEST_TABLE_NAME);
+        Table businessTable = catalog.loadTable(businessIdentifier);
 
-        System.out.println("payments Snapshot Summary:  " + paymentsSnapshot.summary());
-        System.out.println("payments_merge Snapshot Summary:  " + paymentsMergeSnapshot.summary());
+        Snapshot businessCdcSnapshot = businessCdcTable.currentSnapshot();
+        Snapshot businessSnapshot = businessTable.currentSnapshot();
+
+        /*
+        System.out.println("business_cdc Snapshot Summary:  " + businessCdcSnapshot.summary());
+        System.out.println("business Snapshot Summary:  " + businessSnapshot.summary());
+         */
     }
 
     @Test
