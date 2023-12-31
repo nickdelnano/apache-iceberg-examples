@@ -1,10 +1,13 @@
 package org.ndelnano.example;
 
 import static java.lang.String.format;
-import static org.ndelnano.example.Util.getConfiguration;
+import static org.ndelnano.example.Util.*;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.catalog.Namespace;
+import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.iceberg.spark.Spark3Util;
 
@@ -24,6 +27,10 @@ public class Main {
     static SparkSession spark;
     static String CATALOG_NAME = "iceberg";
     static String SCHEMA_NAME = "demo";
+    static String BUSINESS_CDC_SOURCE_TABLE_NAME = "business_cdc";
+    static String BUSINESS_DEST_TABLE_NAME = "business";
+
+    static Namespace demoIcebergNamespace;
 
     public static final String WATERMARK_PROP_PREFIX = "last-snapshot-id";
 
@@ -31,52 +38,106 @@ public class Main {
 
         catalog = new RESTCatalog();
         conf = new Configuration();
-        Map<String, String> properties = getConfiguration();
+        Map<String, String> properties = getCatalogConfigurationDockerNetwork();
         catalog.setConf(conf);
         catalog.initialize(CATALOG_NAME, properties);
 
+        demoIcebergNamespace = Namespace.of(SCHEMA_NAME);
+
         // Create tables
-        SparkConf sparkConf = new SparkConf().setAppName("incremental-read-tests").setMaster("local-cluster[2, 1, 200]");
-        sparkConf.set("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions");
-        sparkConf.set("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog");
-        sparkConf.set("spark.sql.catalog.iceberg.catalog-impl", "org.apache.iceberg.rest.RESTCatalog");
-        sparkConf.set("spark.sql.catalog.iceberg.uri", "http://localhost:8181");
-        sparkConf.set("spark.sql.catalog.iceberg.io-impl", "org.apache.iceberg.aws.s3.S3FileIO");
-        sparkConf.set("spark.sql.catalog.iceberg.warehouse", "s3://warehouse/wh/");
-        sparkConf.set("spark.sql.catalog.iceberg.s3.endpoint", "http://localhost:9000");
-        sparkConf.set("spark.sql.defaultCatalog", "iceberg");
-        sparkConf.set("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.2.0");
-        sparkConf.set("spark.executor.memory", "100m");
-        sparkConf.set("spark.driver.memory", "100m");
+        SparkConf sparkConf = new SparkConf().setAppName("incremental-read-tests");
 
         // Create a Spark session
         spark = SparkSession.builder()
                 .config(sparkConf)
                 .getOrCreate();
 
+         spark.sql("show catalogs;").show();
+        // Drop tables if exists
+        spark.sql(String.format(
+                "DROP TABLE IF EXISTS %s.%s"
+                ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)
+        ).show();
 
-        spark.sql("INSERT INTO demo.business_cdc (\n" +
+        spark.sql(String.format(
+                "DROP TABLE IF EXISTS %s.%s"
+                ,SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)
+        ).show();
+
+        // Create tables
+        spark.sql(String.format(
+                "CREATE SCHEMA IF NOT EXISTS %s"
+                ,SCHEMA_NAME)
+        ).show();
+        spark.sql(String.format(
+        "CREATE TABLE %s.%s (\n" +
+                "id STRING,\n" +
+                "name STRING,\n" +
+                "address STRING,\n" +
+                "cdc_operation STRING,\n" +
+                "event_time TIMESTAMP)\n" +
+                "USING iceberg\n" +
+                "PARTITIONED BY (id)\n" +
+                "LOCATION 's3://warehouse/demo/business_cdc'\n" +
+                "TBLPROPERTIES (\n" +
+                "'format' = 'iceberg/parquet',\n" +
+                "'format-version' = '2',\n" +
+                "'write.parquet.compression-codec' = 'zstd')"
+            ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)
+        ).show();
+        spark.sql(
+                String.format("CREATE TABLE %s.%s (\n" +
+                        "id STRING,\n" +
+                        "name STRING,\n" +
+                        "address STRING,\n" +
+                        "event_time TIMESTAMP)\n" +
+                        "USING iceberg\n" +
+                        "PARTITIONED BY (id)\n" +
+                        "LOCATION 's3://warehouse/demo/business'\n" +
+                        "TBLPROPERTIES (\n" +
+                        "'format' = 'iceberg/parquet',\n" +
+                        "'format-version' = '2',\n" +
+                        "'write.parquet.compression-codec' = 'zstd')"
+                ,SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)
+        ).show();
+
+        // Seed data into business_cdc table
+        // Commit 1-- INSERT id=(0,1)
+        spark.sql(String.format("INSERT INTO %s.%s (\n" +
                         "VALUES\n" +
                         "(0, 'business_0', '0 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE), \n" +
                         "(1, 'business_1', '1 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE) \n" +
                         ")"
-        );
+        ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
+
+        // Commit 2 -- INSERT id=(2, 3)
+        spark.sql(String.format("INSERT INTO %s.%s (\n" +
+                        "VALUES\n" +
+                        "(2, 'business_2', '2 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 29 MINUTE), \n" +
+                        "(3, 'business_3', '3 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 29 MINUTE) \n" +
+                        ")"
+                ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
+
+        // Commit 3 -- UPDATE id=1
+        spark.sql(String.format("INSERT INTO %s.%s (\n" +
+                        "VALUES\n" +
+                        "(1, 'business_1', '1111 Main St', 'UPDATE',  CURRENT_TIMESTAMP() - INTERVAL 28 MINUTE) \n" +
+                        ")"
+                ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
+
+        // Commit 4 -- DELETE id=2
+        spark.sql(String.format("INSERT INTO %s.%s (\n" +
+                        "VALUES\n" +
+                        "(2, 'business_2', '2 Main St', 'DELETE',  CURRENT_TIMESTAMP() - INTERVAL 28 MINUTE) \n" +
+                        ")"
+                ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
+
+        spark.sql(String.format("SELECT * FROM %s.%s",SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
+
+        int number_of_commits = 1;
+        incrementalMerge(BUSINESS_CDC_SOURCE_TABLE_NAME, BUSINESS_DEST_TABLE_NAME, number_of_commits);
 
         /*
-        String sourceTableName = "orders.payments";
-        String destinationTableName = "orders.payments_merge";
-
-        Table destinationTable = null;
-        try {
-            destinationTable = Spark3Util.loadIcebergTable(spark, destinationTableName);
-        } catch (ParseException e) {
-            throw new RuntimeException(e);
-        } catch (NoSuchTableException e) {
-            throw new RuntimeException(e);
-        }
-
-
-        // long endSnapshotId = sourceTable.currentSnapshot().snapshotId();
         long endSnapshotId = 6234076645174348707L;
 
         Dataset<Row> inputDF = spark.sql("select * from iceberg.orders.payments VERSION AS OF " + endSnapshotId);
@@ -97,7 +158,20 @@ public class Main {
             throw new RuntimeException(e);
         }
         */
+    }
 
+    public static void incrementalMerge(String source_table, String dest_table, int number_of_commits) {
+        long endSnapshotId = sourceTable.currentSnapshot().snapshotId();
+    }
 
+    public static Table getIcebergTableForTableName(String table_name) {
+        TableIdentifier paymentsTableIdentifier = TableIdentifier.of(orders, "payments");
+        Table payments = catalog.loadTable(paymentsTableIdentifier);
+
+        TableIdentifier paymentsMergeTableIdentifier = TableIdentifier.of(orders, "payments_merge");
+        Table payments_merge = catalog.loadTable(paymentsMergeTableIdentifier);
+
+        Snapshot paymentsSnapshot = payments.currentSnapshot();
+        Snapshot paymentsMergeSnapshot = payments_merge.currentSnapshot();
     }
 }

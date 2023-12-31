@@ -9,13 +9,13 @@ import org.apache.iceberg.catalog.TableIdentifier;
 
 import java.util.Map;
 
-import static org.ndelnano.example.Util.getConfiguration;
+import static org.ndelnano.example.Util.getCatalogConfigurationHostNetwork;
 
 public class IcebergJavaAPIExamples {
 
     public static void main(String[] args) {
 
-        Map<String, String> properties = getConfiguration();
+        Map<String, String> properties = getCatalogConfigurationHostNetwork();
 
         RESTCatalog catalog = new RESTCatalog();
         Configuration conf = new Configuration();
