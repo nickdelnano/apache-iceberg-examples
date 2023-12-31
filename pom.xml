@@ -27,16 +27,34 @@
 
         <dependency>
             <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-core</artifactId>
-            <version>1.4.2</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.iceberg</groupId>
             <artifactId>iceberg-aws-bundle</artifactId>
             <version>1.4.3</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>RELEASE</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
+
+    <dependencyManagement>
+        <!--spark-sql wants jackson 2.15.x, iceberg-core wants 2.14.x. jackson requires using a single version. -->
+     <dependencies>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.15.2</version>
+        </dependency>
+         <dependency>
+             <groupId>com.fasterxml.jackson.core</groupId>
+             <artifactId>jackson-core</artifactId>
+             <version>2.15.2</version>
+         </dependency>
+     </dependencies>
+    </dependencyManagement>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
