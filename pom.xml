@@ -18,7 +18,6 @@
         <groupId>org.apache.iceberg</groupId>
         <artifactId>iceberg-spark-runtime-3.5_2.12</artifactId>
         <version>1.4.2</version>
-            <scope>provided</scope>
     </dependency>
     <dependency>
         <groupId>org.apache.spark</groupId>
@@ -41,8 +40,8 @@
 
     </dependencies>
 
+    <!--spark-sql wants jackson 2.15.x, iceberg-core wants 2.14.x. jackson requires using a single version. -->
     <dependencyManagement>
-        <!--spark-sql wants jackson 2.15.x, iceberg-core wants 2.14.x. jackson requires using a single version. -->
      <dependencies>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

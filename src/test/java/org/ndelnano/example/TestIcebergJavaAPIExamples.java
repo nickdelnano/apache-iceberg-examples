@@ -6,7 +6,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.spark.Spark3Util;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.SparkConf;
 
@@ -46,34 +45,46 @@ public class TestIcebergJavaAPIExamples {
         catalog.initialize(CATALOG_NAME, properties);
 
         // Create tables
-        SparkConf sparkConf = new SparkConf().setAppName("incremental-read-tests").setMaster("local[2]");
-        sparkConf.set("spark.master", "spark://localhost:7077");
+        SparkConf sparkConf = new SparkConf().setAppName("incremental-read-tests").setMaster("local[4]");
         sparkConf.set("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions");
+
         sparkConf.set("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog");
         sparkConf.set("spark.sql.catalog.iceberg.catalog-impl", "org.apache.iceberg.rest.RESTCatalog");
+        sparkConf.set("spark.sql.catalog.iceberg.type", "rest");
         sparkConf.set("spark.sql.catalog.iceberg.uri", "http://localhost:8181");
         sparkConf.set("spark.sql.catalog.iceberg.io-impl", "org.apache.iceberg.aws.s3.S3FileIO");
         sparkConf.set("spark.sql.catalog.iceberg.warehouse", "s3://warehouse/wh/");
-        sparkConf.set("spark.sql.catalog.iceberg.s3.endpoint", "http://minio:9000");
-        sparkConf.set("spark.sql.defaultCatalog", "iceberg");
+        sparkConf.set("spark.sql.catalog.iceberg.s3.endpoint", "http://localhost:9000");
+
+        //sparkConf.set("spark.sql.defaultCatalog", "iceberg");
+        //sparkConf.set("spark.sql.catalogImplementation", "in-memory");
+
+        sparkConf.set("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.2.0,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.2");
+        sparkConf.set("spark.executor.memory", "500m");
+        sparkConf.set("spark.driver.memory", "500m");
 
         // Create a Spark session
         spark = SparkSession.builder()
                 .config(sparkConf)
                 .getOrCreate();
 
+        spark.sql("show catalogs;").show();
         // Drop tables if exists
         spark.sql(String.format(
                 "DROP TABLE IF EXISTS %s.%s"
                 ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)
-        ).count();
+        ).show();
 
         spark.sql(String.format(
                 "DROP TABLE IF EXISTS %s.%s"
                 ,SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)
-        ).count();
+        ).show();
 
         // Create tables
+        spark.sql(String.format(
+                "CREATE SCHEMA IF NOT EXISTS %s"
+                ,SCHEMA_NAME)
+        ).show();
         spark.sql(String.format(
         "CREATE TABLE %s.%s (\n" +
                 "id STRING,\n" +
@@ -82,14 +93,14 @@ public class TestIcebergJavaAPIExamples {
                 "cdc_operation STRING,\n" +
                 "event_time TIMESTAMP)\n" +
                 "USING iceberg\n" +
-                "PARTITIONED BY (hour(event_time))\n" +
+                "PARTITIONED BY (id)\n" +
                 "LOCATION 's3://warehouse/demo/business_cdc'\n" +
                 "TBLPROPERTIES (\n" +
                 "'format' = 'iceberg/parquet',\n" +
                 "'format-version' = '2',\n" +
                 "'write.parquet.compression-codec' = 'zstd')"
             ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)
-        ).count();
+        ).show();
         spark.sql(
                 String.format("CREATE TABLE %s.%s (\n" +
                         "id STRING,\n" +
@@ -104,18 +115,15 @@ public class TestIcebergJavaAPIExamples {
                         "'format-version' = '2',\n" +
                         "'write.parquet.compression-codec' = 'zstd')"
                 ,SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)
-        ).count();
+        ).show();
 
-        /*
         // Seed data into business_cdc table
         spark.sql(String.format("INSERT INTO %s.%s (\n" +
                         "VALUES\n" +
                         "(0, 'business_0', '0 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE), \n" +
                         "(1, 'business_1', '1 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE) \n" +
                         ")"
-        ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME));
-
-         */
+        ,SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
 
     }
 
