@@ -1,28 +1,26 @@
 package org.ndelnano.example;
 
 import static java.lang.String.format;
+import static org.ndelnano.example.Util.getConfiguration;
 
-import java.util.List;
-import java.util.Map;
-
+import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.Table;
-import org.apache.iceberg.TableScan;
-import org.apache.iceberg.expressions.Expressions;
+import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.iceberg.spark.Spark3Util;
 
-import org.apache.spark.sql.AnalysisException;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.catalyst.parser.ParseException;
 
+import java.util.Map;
+
 public class Main {
 
     public static final String WATERMARK_PROP_PREFIX = "last-snapshot-id";
 
     public static void main(String[] args) {
-
         SparkSession spark = SparkSession.builder().appName("incr-read-example").getOrCreate();
 
         String sourceTableName = "orders.payments";

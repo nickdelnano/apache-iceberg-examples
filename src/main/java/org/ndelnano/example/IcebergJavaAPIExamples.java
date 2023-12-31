@@ -1,18 +1,12 @@
 package org.ndelnano.example;
 
-import org.apache.iceberg.*;
-import org.apache.iceberg.aws.s3.S3FileIOProperties;
-import org.apache.iceberg.catalog.Catalog;
+import org.apache.iceberg.Table;
+import org.apache.iceberg.Snapshot;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.rest.RESTCatalog;
-
-import org.apache.iceberg.aws.AwsProperties;
-
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 
-import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 
 import static org.ndelnano.example.Util.getConfiguration;
