@@ -16,6 +16,7 @@ import org.apache.spark.SparkConf;
 import org.apache.spark.sql.SparkSession;
 
 import java.util.Map;
+import java.util.UUID;
 
 public class IncrementalReadMerge {
 
@@ -94,10 +95,10 @@ public class IncrementalReadMerge {
                     // TODO Get column names dynamically
                     // TODO if multiple updates exist in source, need to only operate on most recent one otherwise error in MERGE. Group by when querying _changes table
                     spark.sql(String.format(
-                            "MERGE INTO %s.%s t USING (SELECT id, name, address, event_time, cdc_operation FROM %s" + "_changes) s \n" +
+                            "MERGE INTO %s.%s t USING (SELECT id, name, address, uuid, event_time, cdc_operation FROM %s" + "_changes) s \n" +
                                     "ON t.id=s.id \n" +
                             "WHEN MATCHED AND s.cdc_operation = 'DELETE' THEN DELETE \n",
-                            "WHEN MATCHED AND s.cdc_operation = 'INSERT' THEN INSERT (id, name, address, event_time) VALUES (s.id, s.name, s.address, s.event_time) \n" +
+                            "WHEN MATCHED AND s.cdc_operation = 'INSERT' THEN INSERT (id, name, address, uuid, event_time) VALUES (s.id, s.name, s.address, s.uuid, s.event_time) \n" +
                             "WHEN MATCHED AND s.op = 'UPDATE' THEN UPDATE SET *",
                     SCHEMA_NAME,destTableName, sourceTableName)).show();
                     return 0;
@@ -147,6 +148,7 @@ public class IncrementalReadMerge {
                         "name STRING,\n" +
                         "address STRING,\n" +
                         "cdc_operation STRING,\n" +
+                        "uuid STRING,\n" +
                         "event_time TIMESTAMP)\n" +
                         "USING iceberg\n" +
                         "PARTITIONED BY (id)\n" +
@@ -163,6 +165,7 @@ public class IncrementalReadMerge {
                                 "name STRING,\n" +
                                 "address STRING,\n" +
                                 "cdc_operation STRING,\n" +
+                                "uuid STRING,\n" +
                                 "event_time TIMESTAMP)\n" +
                                 "USING iceberg\n" +
                                 "PARTITIONED BY (id)\n" +
@@ -179,32 +182,32 @@ public class IncrementalReadMerge {
         // Commit 1 -- INSERT id=(0,1)
         spark.sql(String.format("INSERT INTO %s.%s (\n" +
                         "VALUES\n" +
-                        "(0, 'business_0', '0 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE), \n" +
-                        "(1, 'business_1', '1 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE) \n" +
+                        "(0, 'business_0', '0 Main St', 'INSERT',  '%s', CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE), \n" +
+                        "(1, 'business_1', '1 Main St', 'INSERT',  '%s', CURRENT_TIMESTAMP() - INTERVAL 30 MINUTE) \n" +
                         ")"
-                , SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
+                , SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME, UUID.randomUUID().toString(), UUID.randomUUID().toString())).show();
 
         // Commit 2 -- INSERT id=(2,3)
         spark.sql(String.format("INSERT INTO %s.%s (\n" +
                         "VALUES\n" +
-                        "(2, 'business_2', '2 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 29 MINUTE), \n" +
-                        "(3, 'business_3', '3 Main St', 'INSERT',  CURRENT_TIMESTAMP() - INTERVAL 29 MINUTE) \n" +
+                        "(2, 'business_2', '2 Main St', 'INSERT',  '%s', CURRENT_TIMESTAMP() - INTERVAL 29 MINUTE), \n" +
+                        "(3, 'business_3', '3 Main St', 'INSERT',  '%s', CURRENT_TIMESTAMP() - INTERVAL 29 MINUTE) \n" +
                         ")"
-                , SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
+                , SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME, UUID.randomUUID().toString(), UUID.randomUUID().toString())).show();
 
         // Commit 3 -- UPDATE id=1
         spark.sql(String.format("INSERT INTO %s.%s (\n" +
                         "VALUES\n" +
-                        "(1, 'business_1', '1111 Main St', 'UPDATE',  CURRENT_TIMESTAMP() - INTERVAL 28 MINUTE) \n" +
+                        "(1, 'business_1', '1111 Main St', 'UPDATE',  '%s', CURRENT_TIMESTAMP() - INTERVAL 28 MINUTE) \n" +
                         ")"
-                , SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
+                , SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME, UUID.randomUUID().toString(), UUID.randomUUID().toString())).show();
 
         // Commit 4 -- DELETE id=2
         spark.sql(String.format("INSERT INTO %s.%s (\n" +
                         "VALUES\n" +
-                        "(2, 'business_2', '2 Main St', 'DELETE',  CURRENT_TIMESTAMP() - INTERVAL 28 MINUTE) \n" +
+                        "(2, 'business_2', '2 Main St', 'DELETE',  '%s', CURRENT_TIMESTAMP() - INTERVAL 28 MINUTE) \n" +
                         ")"
-                , SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
+                , SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME, UUID.randomUUID().toString())).show();
 
     }
  /*
