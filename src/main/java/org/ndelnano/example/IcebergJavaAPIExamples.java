@@ -14,30 +14,6 @@ import static org.ndelnano.example.Util.getCatalogConfigurationHostNetwork;
 public class IcebergJavaAPIExamples {
 
     public static void main(String[] args) {
-
-        Map<String, String> properties = getCatalogConfigurationHostNetwork();
-
-        RESTCatalog catalog = new RESTCatalog();
-        Configuration conf = new Configuration();
-        catalog.setConf(conf);
-        catalog.initialize("demo", properties);
-
-        Namespace orders = Namespace.of("orders");
-        TableIdentifier paymentsTableIdentifier = TableIdentifier.of(orders, "payments");
-        Table payments = catalog.loadTable(paymentsTableIdentifier);
-
-        TableIdentifier paymentsMergeTableIdentifier = TableIdentifier.of(orders, "payments_merge");
-        Table payments_merge = catalog.loadTable(paymentsMergeTableIdentifier);
-
-        Snapshot paymentsSnapshot = payments.currentSnapshot();
-        Snapshot paymentsMergeSnapshot = payments_merge.currentSnapshot();
-
-        System.out.print("payments Snapshot Summary:  " + paymentsSnapshot.summary());
-        System.out.print("payments_merge Snapshot Summary:  " + paymentsMergeSnapshot.summary());
-
-        String op = paymentsSnapshot.operation();
-
-
         /*
         // Snapshot operation values https://iceberg.apache.org/spec/#snapshots, https://iceberg.apache.org/javadoc/1.1.0/org/apache/iceberg/DataOperations.html
         // TODO check how snapshot rollbacks are handled
