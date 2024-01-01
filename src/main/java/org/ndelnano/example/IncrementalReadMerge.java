@@ -13,13 +13,11 @@ import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.iceberg.spark.CommitMetadata;
 
 import org.apache.spark.SparkConf;
-import org.apache.spark.sql.Dataset;
-import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 
 import java.util.Map;
 
-public class Main {
+public class IncrementalReadMerge {
 
     SparkSession spark;
     RESTCatalog catalog;
@@ -32,7 +30,7 @@ public class Main {
 
     static final String LAST_SNAPSHOT_ID_WATERMARK = "last-snapshot-id";
 
-    public Main() {
+    public IncrementalReadMerge() {
         this.catalog = new RESTCatalog();
         this.conf = new Configuration();
         Map<String, String> properties = getCatalogConfigurationDockerNetwork();
@@ -46,17 +44,18 @@ public class Main {
                 .config(sparkConf)
                 .getOrCreate();
 
+        // Create tables business_cdc and business. Recreate them if already exists.
         setupSparkTables();
     }
 
     public static void main(String[] args) {
-        Main main = new Main();
+        IncrementalReadMerge incrementalReadMerge = new IncrementalReadMerge();
         // Seed data into business_cdc table
-        main.seedData();
+        incrementalReadMerge.seedData();
 
-        main.incrementalMerge(BUSINESS_CDC_SOURCE_TABLE_NAME, BUSINESS_DEST_TABLE_NAME);
+        incrementalReadMerge.incrementalMerge(BUSINESS_CDC_SOURCE_TABLE_NAME, BUSINESS_DEST_TABLE_NAME);
 
-        main.spark.sql(String.format("SELECT * FROM %s.%s", SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)).show();
+        incrementalReadMerge.spark.sql(String.format("SELECT * FROM %s.%s", SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)).show();
     }
 
     public void incrementalMerge(String sourceTableName, String destTableName) {
@@ -65,7 +64,7 @@ public class Main {
 
         Long sourceLastCommittedSnapshot = sourceTable.currentSnapshot().snapshotId();
         // Get sourceTable commit watermark from destTable - the last commit merged to it
-        Long destLastCommittedSnapshot = Main.getCommitWatermark(destTable, sourceTableName);
+        Long destLastCommittedSnapshot = IncrementalReadMerge.getCommitWatermark(destTable, sourceTableName);
 
         // If destTable has not received any commits yet, do not specify start-snapshot-id and read from the beginning of the table
         // If end-snapshot-is is not provided then the current snapshot ID is used. This simplifies the logic.
@@ -75,8 +74,7 @@ public class Main {
                             "table => 'iceberg.%s.%s',\n" +
                             "options => map('end-snapshot-id', '%s'))"
                     , SCHEMA_NAME, sourceTableName, sourceLastCommittedSnapshot));
-        }
-        else {
+        } else {
             spark.sql(String.format("CALL iceberg.system.create_changelog_view(\n" +
                             "table => 'iceberg.%s.%s',\n" +
                             "options => map('start-snapshot-id', '%s', 'end-snapshot-id', '%s'))"
@@ -91,7 +89,9 @@ public class Main {
         CommitMetadata.withCommitProperties(
                 Map.of(format("%s.%s", LAST_SNAPSHOT_ID_WATERMARK, sourceTableName), String.valueOf(sourceLastCommittedSnapshot)),
                 () -> {
-                    spark.sql("INSERT INTO demo.business (select id, name, address, event_time from business_cdc_changes);");
+                    spark.sql(String.format(
+                            "INSERT INTO %s.%s (select id, name, address, event_time from %s" + "_changes",
+                    SCHEMA_NAME,destTableName, sourceTableName));
                     return 0;
                 },
                 RuntimeException.class);
