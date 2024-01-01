@@ -55,6 +55,9 @@ public class IncrementalReadMerge {
 
         incrementalReadMerge.incrementalMerge(BUSINESS_CDC_SOURCE_TABLE_NAME, BUSINESS_DEST_TABLE_NAME);
 
+        incrementalReadMerge.seedData();
+        incrementalReadMerge.incrementalMerge(BUSINESS_CDC_SOURCE_TABLE_NAME, BUSINESS_DEST_TABLE_NAME);
+
         incrementalReadMerge.spark.sql(String.format("SELECT * FROM %s.%s", SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)).show();
     }
 
@@ -67,7 +70,6 @@ public class IncrementalReadMerge {
         Long destLastCommittedSnapshot = IncrementalReadMerge.getCommitWatermark(destTable, sourceTableName);
 
         // If destTable has not received any commits yet, do not specify start-snapshot-id and read from the beginning of the table
-        // If end-snapshot-is is not provided then the current snapshot ID is used. This simplifies the logic.
         // start-snapshot-id is exclusive, end-snapshot-id is inclusive
         if (destLastCommittedSnapshot == null) {
             spark.sql(String.format("CALL iceberg.system.create_changelog_view(\n" +
@@ -78,7 +80,7 @@ public class IncrementalReadMerge {
             spark.sql(String.format("CALL iceberg.system.create_changelog_view(\n" +
                             "table => 'iceberg.%s.%s',\n" +
                             "options => map('start-snapshot-id', '%s', 'end-snapshot-id', '%s'))"
-                    , SCHEMA_NAME, sourceTable, destLastCommittedSnapshot, sourceLastCommittedSnapshot));
+                    , SCHEMA_NAME, sourceTableName, destLastCommittedSnapshot, sourceLastCommittedSnapshot));
         }
 
         /*
@@ -90,8 +92,8 @@ public class IncrementalReadMerge {
                 Map.of(format("%s.%s", LAST_SNAPSHOT_ID_WATERMARK, sourceTableName), String.valueOf(sourceLastCommittedSnapshot)),
                 () -> {
                     spark.sql(String.format(
-                            "INSERT INTO %s.%s (select id, name, address, event_time from %s" + "_changes",
-                    SCHEMA_NAME,destTableName, sourceTableName));
+                            "INSERT INTO %s.%s (select id, name, address, event_time from %s" + "_changes)",
+                    SCHEMA_NAME,destTableName, sourceTableName)).show();
                     return 0;
                 },
                 RuntimeException.class);
@@ -104,7 +106,7 @@ public class IncrementalReadMerge {
         if (snapshot == null) {
             return null;
         } else {
-            return parseLong(snapshot.summary().get(String.format("snapshot-property.%s.%s", LAST_SNAPSHOT_ID_WATERMARK, sourceTableName)));
+            return parseLong(snapshot.summary().get(String.format("%s.%s", LAST_SNAPSHOT_ID_WATERMARK, sourceTableName)));
         }
     }
 
