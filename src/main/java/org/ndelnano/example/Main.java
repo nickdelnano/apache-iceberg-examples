@@ -54,8 +54,6 @@ public class Main {
         // Seed data into business_cdc table
         main.seedData();
 
-        main.spark.sql(String.format("SELECT * FROM %s.%s", SCHEMA_NAME, BUSINESS_CDC_SOURCE_TABLE_NAME)).show();
-
         main.incrementalMerge(BUSINESS_CDC_SOURCE_TABLE_NAME, BUSINESS_DEST_TABLE_NAME);
 
         main.spark.sql(String.format("SELECT * FROM %s.%s", SCHEMA_NAME, BUSINESS_DEST_TABLE_NAME)).show();
@@ -65,28 +63,25 @@ public class Main {
         Table sourceTable = getIcebergTable(sourceTableName);
         Table destTable = getIcebergTable(destTableName);
 
+        Long sourceLastCommittedSnapshot = sourceTable.currentSnapshot().snapshotId();
         // Get sourceTable commit watermark from destTable - the last commit merged to it
         Long destLastCommittedSnapshot = Main.getCommitWatermark(destTable, sourceTableName);
-        Long sourceLastCommittedSnapshot = sourceTable.currentSnapshot().snapshotId();
-
-        Dataset<Row> df;
 
         // If destTable has not received any commits yet, do not specify start-snapshot-id and read from the beginning of the table
+        // If end-snapshot-is is not provided then the current snapshot ID is used. This simplifies the logic.
         // start-snapshot-id is exclusive, end-snapshot-id is inclusive
         if (destLastCommittedSnapshot == null) {
-            df = spark.read()
-                    .format("iceberg")
-                    .option("end-snapshot-id", sourceLastCommittedSnapshot)
-                    .table(String.format("%s.%s", SCHEMA_NAME, sourceTableName));
-        } else {
-            df = spark.read()
-                    .format("iceberg")
-                    .option("start-snapshot-id", destLastCommittedSnapshot)
-                    .option("end-snapshot-id", sourceLastCommittedSnapshot)
-                    .table(String.format("%s.%s", SCHEMA_NAME, sourceTableName));
+            spark.sql(String.format("CALL iceberg.system.create_changelog_view(\n" +
+                            "table => 'iceberg.%s.%s',\n" +
+                            "options => map('end-snapshot-id', '%s'))"
+                    , SCHEMA_NAME, sourceTableName, sourceLastCommittedSnapshot));
         }
-
-        df.createOrReplaceTempView("cdc_logs");
+        else {
+            spark.sql(String.format("CALL iceberg.system.create_changelog_view(\n" +
+                            "table => 'iceberg.%s.%s',\n" +
+                            "options => map('start-snapshot-id', '%s', 'end-snapshot-id', '%s'))"
+                    , SCHEMA_NAME, sourceTable, destLastCommittedSnapshot, sourceLastCommittedSnapshot));
+        }
 
         /*
         "CommitMetadata provides an interface to add custom metadata to a snapshot summary during a SQL execution,
@@ -96,7 +91,7 @@ public class Main {
         CommitMetadata.withCommitProperties(
                 Map.of(format("%s.%s", LAST_SNAPSHOT_ID_WATERMARK, sourceTableName), String.valueOf(sourceLastCommittedSnapshot)),
                 () -> {
-                    spark.sql("INSERT INTO demo.business (select id, name, address, event_time from cdc_logs);");
+                    spark.sql("INSERT INTO demo.business (select id, name, address, event_time from business_cdc_changes);");
                     return 0;
                 },
                 RuntimeException.class);
