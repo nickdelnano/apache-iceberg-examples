@@ -91,8 +91,14 @@ public class IncrementalReadMerge {
         CommitMetadata.withCommitProperties(
                 Map.of(format("%s.%s", LAST_SNAPSHOT_ID_WATERMARK, sourceTableName), String.valueOf(sourceLastCommittedSnapshot)),
                 () -> {
+                    // TODO Get column names dynamically
+                    // TODO if multiple updates exist in source, need to only operate on most recent one otherwise error in MERGE. Group by when querying _changes table
                     spark.sql(String.format(
-                            "INSERT INTO %s.%s (select id, name, address, event_time from %s" + "_changes)",
+                            "MERGE INTO %s.%s t USING (SELECT id, name, address, event_time, cdc_operation FROM %s" + "_changes) s \n" +
+                                    "ON t.id=s.id \n" +
+                            "WHEN MATCHED AND s.cdc_operation = 'DELETE' THEN DELETE \n",
+                            "WHEN MATCHED AND s.cdc_operation = 'INSERT' THEN INSERT (id, name, address, event_time) VALUES (s.id, s.name, s.address, s.event_time) \n" +
+                            "WHEN MATCHED AND s.op = 'UPDATE' THEN UPDATE SET *",
                     SCHEMA_NAME,destTableName, sourceTableName)).show();
                     return 0;
                 },
@@ -156,6 +162,7 @@ public class IncrementalReadMerge {
                                 "id STRING,\n" +
                                 "name STRING,\n" +
                                 "address STRING,\n" +
+                                "cdc_operation STRING,\n" +
                                 "event_time TIMESTAMP)\n" +
                                 "USING iceberg\n" +
                                 "PARTITIONED BY (id)\n" +
