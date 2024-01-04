@@ -92,6 +92,7 @@ public class IncrementalReadMerge {
         CommitMetadata.withCommitProperties(
                 Map.of(format("%s.%s", LAST_SNAPSHOT_ID_WATERMARK, sourceTableName), String.valueOf(sourceLastCommittedSnapshot)),
                 () -> {
+                    // TODO get the MERGE syntax right
                     // TODO Get column names dynamically
                     // TODO if multiple updates exist in source, need to only operate on most recent one otherwise error in MERGE. Group by when querying _changes table
                     spark.sql(String.format(
@@ -108,6 +109,14 @@ public class IncrementalReadMerge {
 
     public static Long getCommitWatermark(Table table, String sourceTableName) {
         Snapshot snapshot = table.currentSnapshot();
+
+        /* 
+        TODO snapshots due to compaction or other operations may not have the watermark set.
+           Follow the snapshot history and validate snapshot operation values
+           https://iceberg.apache.org/spec/#snapshots, https://iceberg.apache.org/javadoc/1.1.0/org/apache/iceberg/DataOperations.html
+
+        TODO check how rollbacks are handled
+        */
 
         // snapshot will be null if the table hasn't committed any writes
         if (snapshot == null) {
@@ -211,25 +220,3 @@ public class IncrementalReadMerge {
 
     }
  /*
-        // Snapshot operation values https://iceberg.apache.org/spec/#snapshots, https://iceberg.apache.org/javadoc/1.1.0/org/apache/iceberg/DataOperations.html
-        // TODO check how snapshot rollbacks are handled
-        switch (op) {
-            case DataOperations.APPEND:
-                ;
-            case DataOperations.REPLACE:
-                ;
-            case DataOperations.DELETE:
-            case DataOperations.OVERWRITE:
-                throw new IllegalStateException(
-                        String.format(
-                                "Source CDC table should not have snapshot operation: %s (snapshot id %s)",
-                                op.toLowerCase(Locale.ROOT), snapshot.snapshotId()));
-            default:
-                throw new IllegalStateException(
-                        String.format(
-                                "Cannot process unknown snapshot operation: %s (snapshot id %s)",
-                                op.toLowerCase(Locale.ROOT), snapshot.snapshotId()));
-        }
-
-         */
-}
